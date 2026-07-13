@@ -48,7 +48,7 @@ endif()
 
 add_executable(tiny-vllm
     src/main.cpp
-    src/kernels.cu
+    # src/kernels.cu
 )
 
 if(USE_HIP)
