@@ -9,6 +9,7 @@
 #include <cublas_v2.h>
 #define JSON_USE_IMPLICIT_CONVERSIONS 0 // this one is useful, but I don't remember why
 #include "json.hpp"
+#include "kernels.cuh"
 
 
 using json = nlohmann::json;
@@ -30,6 +31,9 @@ constexpr int B2MB = 1024 * 1024;
 constexpr int N_LAYERS = 16;
 constexpr int EMBEDDING_DIMENSIONS = 2048;
 constexpr int VOCABULURY = 128256;
+constexpr int MAX_TOKENS = 2048;
+constexpr int MAX_INPUT_TOKENS = 512;
+
 
 struct Weights{
     //Its only store the location of the weights on the GPU
@@ -46,6 +50,7 @@ struct Weights{
     __nv_bfloat16 *final_norm; // RMS Norm 3
 };
 
+int smCount, MaxThreadCount;
 int checkGPUStatus(){
     int device_count = 0;
     cudaGetDeviceCount(&device_count);
@@ -58,10 +63,13 @@ int checkGPUStatus(){
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
     std::cout << "Device: " << prop.name << "\n";
+    // This is the version of the supported features not some quantity
     std::cout << "Compute capability: " << prop.major << "." << prop.minor << "\n";
     std::cout << "Global memory: " << prop.totalGlobalMem / B2MB << " MB\n";
-    std::cout << "SM count: " << prop.multiProcessorCount << "\n";
-    std::cout << "Max threads per block: " << prop.maxThreadsPerBlock << std::endl;
+    smCount = prop.multiProcessorCount;
+    std::cout << "SM count: " << smCount << "\n";
+    MaxThreadCount = prop.maxThreadsPerBlock;
+    std::cout << "Max threads per block: " << MaxThreadCount << std::endl;
     size_t free_mem;
     size_t total_mem;
     cudaMemGetInfo(&free_mem, &total_mem);
@@ -98,7 +106,7 @@ int cpyToGPU(void* modelWeights, uint64_t maxOffset, std::ifstream& model){
     return 0;
 }
 
-int loadWeights(Weights& weights){
+int loadWeights(){
 
     if(checkGPUStatus() != 0)return 1;
     std::ifstream model("./models/Llama-3.2-1B-Instruct/model.safetensors", std::ios_base::binary);
@@ -150,8 +158,35 @@ int loadWeights(Weights& weights){
     return 0;
 
 }
+
+int loadTokensandEmbedding(std::vector<int> & input_tokens){
+    int input_token_size = input_tokens.size();
+    if(input_token_size == 0){
+        cerr << "Input tokens are empty\n";
+        return 1;
+    }
+
+    int* gpu_inputTokens;
+    cudaMalloc(&gpu_inputTokens, sizeof(int) * input_token_size);
+    cudaMemcpy(gpu_inputTokens, input_tokens.data(), sizeof(int) * input_token_size, cudaMemcpyHostToDevice);
+
+    __nv_bfloat16* embeddedInputs;
+    cudaMalloc(&embeddedInputs, sizeof(__nv_bfloat16) * input_token_size * 2048);
+
+    /*This is how you envoke a kernel(function) on a gpu
+        kernel_name<<<number of blocks, thread per block>>>(attribs);
+        thread per block should not exccedd MaxThreadCount
+    */
+    embeddingKernel<<<input_token_size, MaxThreadCount>>>(gpu_inputTokens, embeddedInputs, Weights.embed_tokens);
+    cout<<"code reached here\n";
+}
+Weights weights;
+
 int main(){
-    Weights weights;
-    loadWeights(weights);
+    loadWeights();
+
+    std::vector<int> input_tokens = {678, 264, 1933, 13};
+    loadTokensandEmbedding(input_tokens);
+
     return 0;
 }
