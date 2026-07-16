@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug tiny-vllm",
+            "name": "Debug smolVLLM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/tiny-vllm",
+            "program": "${workspaceFolder}/build/smolVLLM",
             "args": [],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,

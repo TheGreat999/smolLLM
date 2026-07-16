@@ -1,2 +1,2 @@
 
-./build/tiny-vllm   
+./build/smolVLLM   

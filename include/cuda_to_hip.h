@@ -1,6 +1,6 @@
 #pragma once
 
-// CUDA-to-HIP compatibility header for tiny-vllm
+// CUDA-to-HIP compatibility header for smolVLLM
 // Keeps CUDA spellings in source and aliases them to HIP on AMD GPUs
 
 #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)

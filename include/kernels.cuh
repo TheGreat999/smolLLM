@@ -2,4 +2,4 @@
 
 #include <cuda_bf16.h>
 
-void embeddingKernel(int* gpu_inputTokens, __nv_bfloat16* embeddedInputs, __nv_bfloat16* embed_tokens);
+void callEmbeddingKernel(int* inputTokens, __nv_bfloat16* embeddedInputs, __nv_bfloat16* embedTokensWeight, int input_token_size, int MaxThreadCount);

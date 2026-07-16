@@ -1,5 +1,5 @@
 """
-Reference outputs for verifying tiny-vllm kernel correctness.
+Reference outputs for verifying smolVLLM kernel correctness.
 Usage:
     python reference.py "The capital of France is" --model meta-llama/Llama-3.2-1B-Instruct
 Prints embedding, RMSNorm, and Q/K/V projection values for comparison with C++ output.
