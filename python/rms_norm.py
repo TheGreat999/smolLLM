@@ -1,5 +1,5 @@
 """
-Reference RMSNorm output for verifying smolVLLM kernel correctness.
+Reference RMSNorm output for verifying smolLLM kernel correctness.
 Usage:
     python reference_rmsnorm.py "The capital of France is" --model meta-llama/Llama-3.2-1B
 Prints embedding values and post-RMSNorm values for comparison with C++ output.

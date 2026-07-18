@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug smolVLLM",
+            "name": "Debug smolLLM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/smolVLLM",
+            "program": "${workspaceFolder}/build/smolLLM",
             "args": [],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,

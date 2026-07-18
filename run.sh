@@ -1,2 +1,2 @@
 
-./build/smolVLLM   
+./build/smolLLM   

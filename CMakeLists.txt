@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 set(CMAKE_CUDA_COMPILER "/opt/cuda/bin/nvcc")
 set(CUDACXX "/opt/cuda/bin/nvcc")
 
-project(smolVLLM LANGUAGES CXX CUDA)
+project(smolLLM LANGUAGES CXX CUDA)
 
 # ==========================
 # Language standards
@@ -29,7 +29,7 @@ set(CMAKE_CUDA_FLAGS_DEBUG "-G -g -DDEBUG")
 
 find_package(CUDAToolkit REQUIRED)
 
-add_executable(smolVLLM
+add_executable(smolLLM
     src/main.cpp
     src/kernels.cu
 )
@@ -37,11 +37,11 @@ add_executable(smolVLLM
 # ==========================
 # Includes and Source directories
 # ==========================
-target_include_directories(smolVLLM PRIVATE src)
-target_include_directories(smolVLLM PRIVATE include)
+target_include_directories(smolLLM PRIVATE src)
+target_include_directories(smolLLM PRIVATE include)
 
 
-target_link_libraries(smolVLLM PRIVATE
+target_link_libraries(smolLLM PRIVATE
 CUDA::cublas
 CUDA::cudart
 )

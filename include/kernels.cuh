@@ -3,3 +3,5 @@
 #include <cuda_bf16.h>
 
 void callEmbeddingKernel(int* inputTokens, __nv_bfloat16* embeddedInputs, __nv_bfloat16* embedTokensWeight, int input_token_size, int MaxThreadCount);
+
+void callRMSNormKernel(__nv_bfloat16* inputTokens, __nv_bfloat16* normalizedTokens, __nv_bfloat16* normWeights,int input_token_size, int MaxThreadCount);

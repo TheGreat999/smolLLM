@@ -7,12 +7,18 @@
 #include <chrono>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
-#define JSON_USE_IMPLICIT_CONVERSIONS 0 // this one is useful, but I don't remember why
 #include "json.hpp"
 #include "kernels.cuh"
 
-
+/*
+    This prevent implicit convertion example:
+        json j = {{"age", 20}}; 
+        int age = j["age"] ❌
+        int age = j["Age"].get<int>() ✔️
+*/
+#define JSON_USE_IMPLICIT_CONVERSIONS 0
 using json = nlohmann::json;
+
 using std::cout, std::cerr, std::cin, std::to_string;
 
 #define TIMER_START(name) \
@@ -25,6 +31,7 @@ using std::cout, std::cerr, std::cin, std::to_string;
                      .count() \
               << " ms\n"
 
+              
 constexpr int B2MB = 1024 * 1024;
 
 // These are need to configure for each model
@@ -168,8 +175,7 @@ int loadWeights(){
 
 }
 
-int loadTokensandEmbedding(std::vector<int> & input_tokens){
-    int input_token_size = input_tokens.size();
+int loadTokensandEmbedding(std::vector<int> & input_tokens, __nv_bfloat16** embeddedInputs, int input_token_size){
     if(input_token_size == 0){
         cerr << "Input tokens are empty\n";
         return 1;
@@ -183,34 +189,67 @@ int loadTokensandEmbedding(std::vector<int> & input_tokens){
     cudaMemcpy(gpu_inputTokens, input_tokens.data(), sizeof(int) * input_token_size, cudaMemcpyHostToDevice);
     cudaDeviceSynchronize();
 
-    __nv_bfloat16* embeddedInputs;
-    cudaMalloc(&embeddedInputs, sizeof(__nv_bfloat16) * input_token_size * 2048);
+    // __nv_bfloat16* embeddedInputs;
+    cudaMalloc(embeddedInputs, sizeof(__nv_bfloat16) * input_token_size * 2048);
 
     /*This is how you envoke a kernel(function) on a gpu
         kernel_name<<<number of blocks, thread per block>>>(attribs);
         thread per block should not exccedd MaxThreadCount
     */
-    callEmbeddingKernel(gpu_inputTokens, embeddedInputs, weights.embed_tokens, input_token_size, MaxThreadCount);
+    callEmbeddingKernel(gpu_inputTokens, *embeddedInputs, weights.embed_tokens, input_token_size, MaxThreadCount);
     cudaDeviceSynchronize();
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess){
         cerr<<cudaGetErrorName(err)<<'\n'<<cudaGetErrorString(err) << '\n';
+        return 1;
     }
 
     cudaFree(gpu_inputTokens);
-    cudaFree(embeddedInputs);
     TIMER_END(EmbeddingTime);
     cout << "Embedding successfull\n\n";
 
     return 0;
 }
 
+int RMS_layer(__nv_bfloat16* inputTokens, __nv_bfloat16** normalizedTokens, __nv_bfloat16* normWeights, int input_token_size){
+
+    cout << "==========================\n";
+    cout << "Input layer Normalization \n";
+    cout << "==========================\n";
+    TIMER_START(RMSNorm1Time);
+    cudaMalloc(normalizedTokens, sizeof(__nv_bfloat16) * input_token_size * 2048);
+
+    callRMSNormKernel(inputTokens, *normalizedTokens, normWeights, input_token_size, MaxThreadCount);
+
+    cudaDeviceSynchronize();
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess){
+        cerr<<cudaGetErrorName(err)<<'\n'<<cudaGetErrorString(err) << '\n';
+        return 1;
+    }
+
+    TIMER_END(RMSNorm1Time);
+    cout << "Normalized Input layer successfully\n\n";
+
+    return 0;
+    
+}
+
 int main(){
     if(loadWeights()) return 1;
 
     std::vector<int> input_tokens = {678, 264, 1933, 13};
-    loadTokensandEmbedding(input_tokens);
+    int input_token_size = input_tokens.size();
+
+    __nv_bfloat16* embeddedTokens;
+    if(loadTokensandEmbedding(input_tokens, &embeddedTokens, input_token_size)) return 1;
+
+    // cout<<"hi\n";
+    __nv_bfloat16* rms1;
+    if(RMS_layer(embeddedTokens, &rms1, *weights.input_layer_norm, input_token_size)) return 1;
+    cudaFree(embeddedTokens);
 
     return 0;
 }
