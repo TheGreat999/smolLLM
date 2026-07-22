@@ -70,3 +70,65 @@ __global__ void RMSNormKernel(__nv_bfloat16* inputTokens, __nv_bfloat16* normali
 void callRMSNormKernel(__nv_bfloat16* inputTokens, __nv_bfloat16* normalizedTokens, __nv_bfloat16* normWeights,int input_token_size, int MaxThreadCount){
     RMSNormKernel<<<input_token_size, MaxThreadCount>>>(inputTokens, normalizedTokens, normWeights);
 }
+
+
+/*
+This is the adder function
+*/
+__global__ void residualConnectionsKernel(__nv_bfloat16* output, __nv_bfloat16* input){
+    int idx = threadIdx.x + blockIdx.x * 2048;
+    output[idx] += input[idx];
+    output[idx + 1024] += input[idx + 1024];
+}
+
+void callresidualConnectionsKernel(__nv_bfloat16* output, __nv_bfloat16* input, int input_token_size, int MaxThreadCount){
+    residualConnectionsKernel<<<input_token_size, MaxThreadCount>>>(input, output);
+}
+
+
+/*
+GemmEx basically do C = αAB + βC
+LD = leading dimention(stride) the ammount of spaces to move to get the next value of this attribute(general def)
+                                the number of vals to move to go to the next column here it is row(special def)
+it accepts matrix in column major format
+
+IMPORTANT HERE 
+==========
+internally since it asusmes the mats are column major 
+we want C = AxB
+but since in mem A and B are row major it will give use BxA
+so we pass B first then A now when it will compute it will give use B'xA' = (AB)' = C' 
+and since it also assumes C is stored in column major we get row major as ouput
+=========
+If you are reading this not the one how wrote these comments dont worry even I didn't understood it the main takeaway is this pass CUBLAS_OP_N to both A and B
+*/
+void callmatMul(__nv_bfloat16* A, __nv_bfloat16* B, __nv_bfloat16* C, int m, int k, int n){
+    cublasHandle_t handle;
+    cublasCreate_v2(&handle);
+
+    float alpha = 1;
+    float beta = 0;
+
+    cublasGemmEx(
+        handle, // Pointer to the context same thing as OpenGL context
+        CUBLAS_OP_N,    // Dont rotate A
+        CUBLAS_OP_N,    // Dont rotate B
+        m,  
+        n,  
+        k,  
+        &alpha, 
+        B, 
+        CUDA_R_16BF,    // datatype of B
+        n,              // LD of B
+        A,  
+        CUDA_R_16BF,    // datatype of A
+        k,              // LD of A
+        &beta,  
+        C,  
+        CUDA_R_16BF,    // datatype of C
+        n,              // LD of C
+        CUBLAS_COMPUTE_32F, // datatype used for intermediate computation(float32)
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP   // ]cores used for multiplication(it doesnt expose algo)
+                                        // Here if tensor cores are there and support datatype use them 
+    );
+}

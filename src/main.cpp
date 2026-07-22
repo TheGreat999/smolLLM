@@ -90,6 +90,32 @@ int checkGPUStatus(){
     return 0;
 }
 
+int RMS_layer(__nv_bfloat16* inputTokens, __nv_bfloat16** normalizedTokens, __nv_bfloat16* normWeights, int input_token_size){
+
+
+    cout << "==========================\n";
+    cout << "Input layer Normalization \n";
+    cout << "==========================\n";
+    TIMER_START(RMSNorm1Time);
+    cudaMalloc(normalizedTokens, sizeof(__nv_bfloat16) * input_token_size * 2048);
+
+    callRMSNormKernel(inputTokens, *normalizedTokens, normWeights, input_token_size, MaxThreadCount);
+
+    cudaDeviceSynchronize();
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess){
+        cerr<<cudaGetErrorName(err)<<'\n'<<cudaGetErrorString(err) << '\n';
+        return 1;
+    }
+
+    TIMER_END(RMSNorm1Time);
+    cout << "Normalized Input layer successfully\n\n";
+
+    return 0;
+    
+}
+
 int cpyToGPU(void** modelWeights, uint64_t maxOffset, std::ifstream& model){
     TIMER_START(Devalloc);
     cudaMalloc(modelWeights, maxOffset);
@@ -175,7 +201,7 @@ int loadWeights(){
 
 }
 
-int loadTokensandEmbedding(std::vector<int> & input_tokens, __nv_bfloat16** embeddedInputs, int input_token_size){
+int loadTokensandEmbedding(std::vector<int> & input_tokens, __nv_bfloat16** embeddedInputs, int input_token_size, int embedding_size){
     if(input_token_size == 0){
         cerr << "Input tokens are empty\n";
         return 1;
@@ -190,7 +216,7 @@ int loadTokensandEmbedding(std::vector<int> & input_tokens, __nv_bfloat16** embe
     cudaDeviceSynchronize();
 
     // __nv_bfloat16* embeddedInputs;
-    cudaMalloc(embeddedInputs, sizeof(__nv_bfloat16) * input_token_size * 2048);
+    cudaMalloc(embeddedInputs, embedding_size);
 
     /*This is how you envoke a kernel(function) on a gpu
         kernel_name<<<number of blocks, thread per block>>>(attribs);
@@ -212,29 +238,12 @@ int loadTokensandEmbedding(std::vector<int> & input_tokens, __nv_bfloat16** embe
     return 0;
 }
 
-int RMS_layer(__nv_bfloat16* inputTokens, __nv_bfloat16** normalizedTokens, __nv_bfloat16* normWeights, int input_token_size){
-
-    cout << "==========================\n";
-    cout << "Input layer Normalization \n";
-    cout << "==========================\n";
-    TIMER_START(RMSNorm1Time);
-    cudaMalloc(normalizedTokens, sizeof(__nv_bfloat16) * input_token_size * 2048);
-
-    callRMSNormKernel(inputTokens, *normalizedTokens, normWeights, input_token_size, MaxThreadCount);
-
-    cudaDeviceSynchronize();
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess){
-        cerr<<cudaGetErrorName(err)<<'\n'<<cudaGetErrorString(err) << '\n';
-        return 1;
-    }
-
-    TIMER_END(RMSNorm1Time);
-    cout << "Normalized Input layer successfully\n\n";
-
+int attentionPass(int layer){
     return 0;
-    
+}
+
+int MLP(int layer){
+    return 0;
 }
 
 int main(){
@@ -244,12 +253,36 @@ int main(){
     int input_token_size = input_tokens.size();
 
     __nv_bfloat16* embeddedTokens;
-    if(loadTokensandEmbedding(input_tokens, &embeddedTokens, input_token_size)) return 1;
+    int embedding_size = EMBEDDING_DIMENSIONS * input_token_size * sizeof(__nv_bfloat16);
+    if(loadTokensandEmbedding(input_tokens, &embeddedTokens, input_token_size, embedding_size)) return 1;
 
-    // cout<<"hi\n";
-    __nv_bfloat16* rms1;
-    if(RMS_layer(embeddedTokens, &rms1, *weights.input_layer_norm, input_token_size)) return 1;
-    cudaFree(embeddedTokens);
+    
+    // cudaFree(embeddedTokens);
 
+    /*
+    Puting the transformer for loop in code here
+    */
+    __nv_bfloat16* preOutput = embeddedTokens;
+    for(int layer = 0; layer < N_LAYERS; layer++){
+
+        __nv_bfloat16* rms1;
+        if(RMS_layer(preOutput, &rms1, *weights.input_layer_norm, input_token_size)) return 1;
+
+        attentionPass(layer);
+
+        __nv_bfloat16* output;
+        callresidualConnectionsKernel(output, preOutput, input_token_size, MaxThreadCount);
+
+        __nv_bfloat16* cpydata;
+
+        MLP(layer);
+
+        callresidualConnectionsKernel(output, embeddedTokens, input_token_size, MaxThreadCount);
+
+        preOutput = output;
+
+        cout << "Pass " << layer << "Completed successfully\n";
+       
+    }
     return 0;
 }

@@ -42,6 +42,9 @@ target_include_directories(smolLLM PRIVATE include)
 
 
 target_link_libraries(smolLLM PRIVATE
-CUDA::cublas
-CUDA::cudart
+CUDA::cudart # this is the main lib cuda-run time
+CUDA::cublas # provide BLAS functions (basic linear algebra sunprograms)
+# using this currently then will switch to Lt
+# CUDA::cublasLt # provide BLAS functions (basic linear algebra sunprograms) optimized for LLMs
+# we still include the normal one to avoid type def issues(not sure about that might have to try w/o it to check)
 )
