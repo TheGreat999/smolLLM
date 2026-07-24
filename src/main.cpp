@@ -35,11 +35,17 @@ using std::cout, std::cerr, std::cin, std::to_string;
 constexpr int B2MB = 1024 * 1024;
 
 // These are need to configure for each model
+//TODO: add coommments for each explaining their meaning
 constexpr int N_LAYERS = 16;
 constexpr int EMBEDDING_DIMENSIONS = 2048;
 constexpr int VOCABULURY = 128256;
 constexpr int MAX_TOKENS = 2048;
 constexpr int MAX_INPUT_TOKENS = 512;
+constexpr int Q_HEADS = 32;
+constexpr int KV_DIM = 512;
+constexpr int KV_HEADS = 8;
+constexpr int GQA_Q_TO_K_RATIO = Q_HEADS / KV_HEADS;
+constexpr int HEAD_DIM = EMBEDDING_DIMENSIONS / Q_HEADS;
 
 
 
@@ -93,10 +99,10 @@ int checkGPUStatus(){
 int RMS_layer(__nv_bfloat16* inputTokens, __nv_bfloat16** normalizedTokens, __nv_bfloat16* normWeights, int input_token_size){
 
 
-    cout << "==========================\n";
-    cout << "Input layer Normalization \n";
-    cout << "==========================\n";
-    TIMER_START(RMSNorm1Time);
+    // cout << "==========================\n";
+    // cout << "Input layer Normalization \n";
+    // cout << "==========================\n";
+    // TIMER_START(RMSNorm1Time);
     cudaMalloc(normalizedTokens, sizeof(__nv_bfloat16) * input_token_size * 2048);
 
     callRMSNormKernel(inputTokens, *normalizedTokens, normWeights, input_token_size, MaxThreadCount);
@@ -109,8 +115,8 @@ int RMS_layer(__nv_bfloat16* inputTokens, __nv_bfloat16** normalizedTokens, __nv
         return 1;
     }
 
-    TIMER_END(RMSNorm1Time);
-    cout << "Normalized Input layer successfully\n\n";
+    // TIMER_END(RMSNorm1Time);
+    // cout << "Normalized Input layer successfully\n\n";
 
     return 0;
     
@@ -238,11 +244,58 @@ int loadTokensandEmbedding(std::vector<int> & input_tokens, __nv_bfloat16** embe
     return 0;
 }
 
-int attentionPass(int layer){
+int attentionPass(int layer, nv_bfloat16* normalizedTokens, int input_token_size, int embedding_size, nv_bfloat16* outputScore){
+
+    nv_bfloat16* k_proj;
+    cudaMalloc(&k_proj, input_token_size * KV_DIM * sizeof(__nv_bfloat16));
+    callmatMul(normalizedTokens, weights.k_proj[layer], k_proj, input_token_size, EMBEDDING_DIMENSIONS, KV_DIM, CUBLAS_OP_N, CUBLAS_OP_N);
+
+    nv_bfloat16* q_proj;
+    cudaMalloc(&q_proj, embedding_size);
+    callmatMul(normalizedTokens, weights.q_proj[layer], q_proj, input_token_size, EMBEDDING_DIMENSIONS, EMBEDDING_DIMENSIONS, CUBLAS_OP_N, CUBLAS_OP_N);
+
+    nv_bfloat16* v_proj;
+    cudaMalloc(&v_proj, input_token_size * KV_DIM * sizeof(__nv_bfloat16));
+    callmatMul(normalizedTokens, weights.v_proj[layer], v_proj, input_token_size, EMBEDDING_DIMENSIONS, KV_DIM, CUBLAS_OP_N, CUBLAS_OP_N);
+
+    nv_bfloat16* attentionScore;
+    cudaMalloc(&attentionScore, input_token_size * input_token_size * sizeof(__nv_bfloat16));
+    
+    // nv_bfloat16* outputScore;
+    cudaMalloc(&outputScore, input_token_size * input_token_size * sizeof(__nv_bfloat16));
+
+    //Reshape Q into heads;
+
+    callRoPE(k_proj);
+    callRoPE(q_proj);
+
+    for(int QHeadIdx = 0; QHeadIdx < Q_HEADS; QHeadIdx++){
+
+        int kHeadIdx = QHeadIdx / GQA_Q_TO_K_RATIO;
+        __nv_bfloat16* q_head = q_proj + QHeadIdx * HEAD_DIM;
+        __nv_bfloat16* k_head = k_proj + kHeadIdx * HEAD_DIM;
+        __nv_bfloat16* v_head = v_proj + kHeadIdx * HEAD_DIM;
+        __nv_bfloat16* attentionScore_head = attentionScore + input_token_size * input_token_size * QHeadIdx;
+        callmatMul(attentionScore_head, q_head, k_head, input_token_size, HEAD_DIM, input_token_size, CUBLAS_OP_N, CUBLAS_OP_T);
+        
+
+    }
+
+        // callmatMul(attentionScore_head, q_head, k_head, input_token_size, HEAD_DIM, input_token_size, 0, 1);
+
+
+
+
+        
+      
+    
+
+
+
     return 0;
 }
 
-int MLP(int layer){
+int MLP(int layer, __nv_bfloat16* inputScore, __nv_bfloat16* MLPoutput){
     return 0;
 }
 
@@ -256,30 +309,29 @@ int main(){
     int embedding_size = EMBEDDING_DIMENSIONS * input_token_size * sizeof(__nv_bfloat16);
     if(loadTokensandEmbedding(input_tokens, &embeddedTokens, input_token_size, embedding_size)) return 1;
 
-    
-    // cudaFree(embeddedTokens);
-
     /*
     Puting the transformer for loop in code here
     */
-    __nv_bfloat16* preOutput = embeddedTokens;
+    __nv_bfloat16* prevOutput = embeddedTokens;
     for(int layer = 0; layer < N_LAYERS; layer++){
 
         __nv_bfloat16* rms1;
-        if(RMS_layer(preOutput, &rms1, *weights.input_layer_norm, input_token_size)) return 1;
+        if(RMS_layer(prevOutput, &rms1, *weights.input_layer_norm, input_token_size)) return 1;
 
-        attentionPass(layer);
+        __nv_bfloat16* outputScore;
+        attentionPass(layer, rms1, input_token_size, embedding_size, outputScore);
 
-        __nv_bfloat16* output;
-        callresidualConnectionsKernel(output, preOutput, input_token_size, MaxThreadCount);
+        callresidualConnectionsKernel(outputScore, prevOutput, input_token_size, MaxThreadCount);
 
         __nv_bfloat16* cpydata;
+        cudaMemcpy(cpydata, outputScore, input_token_size * input_token_size, cudaMemcpyDeviceToDevice);
 
-        MLP(layer);
+        __nv_bfloat16* MLPoutput;
+        MLP(layer, outputScore, MLPoutput);
 
-        callresidualConnectionsKernel(output, embeddedTokens, input_token_size, MaxThreadCount);
+        callresidualConnectionsKernel(MLPoutput, embeddedTokens, input_token_size, MaxThreadCount);
 
-        preOutput = output;
+        prevOutput = MLPoutput;
 
         cout << "Pass " << layer << "Completed successfully\n";
        

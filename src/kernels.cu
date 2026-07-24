@@ -102,7 +102,7 @@ and since it also assumes C is stored in column major we get row major as ouput
 =========
 If you are reading this not the one how wrote these comments dont worry even I didn't understood it the main takeaway is this pass CUBLAS_OP_N to both A and B
 */
-void callmatMul(__nv_bfloat16* A, __nv_bfloat16* B, __nv_bfloat16* C, int m, int k, int n){
+void callmatMul(__nv_bfloat16* A, __nv_bfloat16* B, __nv_bfloat16* C, int m, int k, int n, cublasOperation_t TA, cublasOperation_t TB){
     cublasHandle_t handle;
     cublasCreate_v2(&handle);
 
@@ -111,8 +111,8 @@ void callmatMul(__nv_bfloat16* A, __nv_bfloat16* B, __nv_bfloat16* C, int m, int
 
     cublasGemmEx(
         handle, // Pointer to the context same thing as OpenGL context
-        CUBLAS_OP_N,    // Dont rotate A
-        CUBLAS_OP_N,    // Dont rotate B
+        TA,    // Dont rotate A
+        TB,    // Dont rotate B
         m,  
         n,  
         k,  
@@ -131,4 +131,8 @@ void callmatMul(__nv_bfloat16* A, __nv_bfloat16* B, __nv_bfloat16* C, int m, int
         CUBLAS_GEMM_DEFAULT_TENSOR_OP   // ]cores used for multiplication(it doesnt expose algo)
                                         // Here if tensor cores are there and support datatype use them 
     );
+}
+
+void callRoPE(__nv_bfloat16* mat){
+    return;
 }
