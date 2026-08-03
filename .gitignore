@@ -48,3 +48,5 @@ model.safetensors
 temp.txt
 temp*.md
 .cache/
+log.txt
+

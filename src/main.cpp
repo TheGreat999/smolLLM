@@ -303,6 +303,7 @@ int main(){
     if(loadWeights()) return 1;
 
     std::vector<int> input_tokens = {678, 264, 1933, 13};
+
     int input_token_size = input_tokens.size();
 
     __nv_bfloat16* embeddedTokens;
