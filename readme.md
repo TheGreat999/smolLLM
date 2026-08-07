@@ -29,7 +29,7 @@ Note: Support for additional models are planned in version 2.0.
 
 ---
 
-## Platform Support
+## form Support
 
 | Platform | Status |
 |----------|:------:|
@@ -37,6 +37,8 @@ Note: Support for additional models are planned in version 2.0.
 | NVIDIA GPUs (CUDA) | ✅ |
 | AMD GPUs (HIP) | Planned(v1.3) |
 | Vulkan Compute | Planned(v1.4) |
+| Android | Planned(v3.0) |
+| Windows | Not officially suppported but can be build|  
 
 ---
 

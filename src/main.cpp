@@ -280,7 +280,9 @@ int attentionPass(int layer, nv_bfloat16* normalizedTokens, int input_token_size
         
 
     }
-
+    for(int QHeadIdx = 0; QHeadIdx < Q_HEADS; QHeadIdx++){
+        
+    }
         // callmatMul(attentionScore_head, q_head, k_head, input_token_size, HEAD_DIM, input_token_size, 0, 1);
 
 

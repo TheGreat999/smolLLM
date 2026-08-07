@@ -136,3 +136,79 @@ void callmatMul(__nv_bfloat16* A, __nv_bfloat16* B, __nv_bfloat16* C, int m, int
 void callRoPE(__nv_bfloat16* mat){
     return;
 }
+
+
+__global__ void softMaxKernel(__nv_bfloat16* score, int input_token_size, int sz){
+    extern __shared__ float vals[];
+    __shared__ float mx;
+    int idx = threadIdx.x + blockIdx.x * input_token_size;
+
+    /*
+    This tree reduction calculate max value
+    */
+    if(threadIdx.x < input_token_size) vals[threadIdx.x] = (float)(score[idx]);
+    else vals[threadIdx.x] = -FLT_MAX;
+    #pragma unroll
+    for(int stride = sz>>1; stride >= 64; stride >>= 1){
+        if(threadIdx.x < stride){
+            vals[threadIdx.x] = fmaxf(vals[threadIdx.x], vals[threadIdx.x + stride]);
+        }
+        __syncthreads();
+    }
+
+    if(threadIdx.x < 32){
+        float local_mx;
+        if(input_token_size > 32)local_mx = fmaxf(vals[threadIdx.x], vals[threadIdx.x + 32]);
+        else local_mx = vals[threadIdx.x];
+
+        #pragma unroll
+        for(int offset = 16; offset > 0; offset >>= 1){
+            local_mx = fmaxf(local_mx, __shfl_down_sync(0xffffffff, local_mx, offset));
+        }
+        if(threadIdx.x == 0){
+            mx = local_mx;
+        }
+    }
+    __syncthreads();
+
+    /*
+    This tree reduction calculate the sum of stable exp in vals[0];
+    */
+    float exp = 0.0f;
+    if(threadIdx.x < input_token_size) exp = expf((float)(score[idx]) - mx);
+    vals[threadIdx.x] = exp;
+    #pragma unroll
+    for(int stride = sz>>1; stride >= 64; stride >>= 1){
+        if(threadIdx.x < stride){
+            vals[threadIdx.x] += vals[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+
+    if(threadIdx.x < 32){
+        float sum;
+        if(input_token_size > 32)sum = vals[threadIdx.x] + vals[threadIdx.x + 32];
+        else sum = vals[threadIdx.x];
+
+        #pragma unroll
+        for(int offset = 16; offset > 0; offset >>= 1){
+            sum += __shfl_down_sync(0xffffffff, sum, offset);
+        }
+        if(threadIdx.x == 0){
+            vals[0] = sum;
+        }
+    }
+    __syncthreads();
+
+    if(threadIdx.x < input_token_size) score[idx] = (__nv_bfloat16)(exp / vals[0]);
+
+}
+
+//WARNING dont let input_token_size be greater than maxThreadCount
+void callSoftMaxKernel(__nv_bfloat16* score, int input_token_size, int maxThreadCount, int sz){
+    if(sz > maxThreadCount){
+        std::cerr<<"Input token size exceed maxThreadCoutn in softmax\n";
+        return;
+    }
+    softMaxKernel<<<input_token_size, sz, sz * sizeof(float)>>>(score, input_token_size, sz);
+}
